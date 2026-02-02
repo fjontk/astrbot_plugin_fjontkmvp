@@ -118,7 +118,8 @@ class PromptInjector(Star):
         
         if injection_text:
             if req.system_prompt:
-                req.system_prompt += injection_text
+                # Prepend the injection text to the system prompt
+                req.system_prompt = injection_text + req.system_prompt
             else:
                 req.system_prompt = injection_text
             
