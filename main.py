@@ -2,82 +2,96 @@ from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api.provider import ProviderRequest
 from astrbot.api import AstrBotConfig, logger
+from .service import InjectionService
 
-@register("prompt_injector", "YourName", "当前任务与附加知识提示词注入插件", "1.0.0")
+@register("prompt_injector", "fjontk", "一个暴力但轻量的提示词注入插件", "1.1.0")
 class PromptInjector(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.config = config
-
-    def _get_storage_key(self, event: AstrMessageEvent) -> str:
-        """生成基于会话的存储键"""
-        return f"injection_{event.unified_msg_origin}"
-
-    def _check_whitelist(self, event: AstrMessageEvent) -> bool:
-        """检查白名单。如果未开启白名单模式，直接通过。"""
-        if not self.config.get("whitelist_mode", False):
-            return True
-        
-        whitelist = self.config.get("whitelist", [])
-        return event.unified_msg_origin in whitelist or event.get_group_id() in whitelist
+        self.service = InjectionService(self, config)
 
     @filter.command("set_task")
-    async def set_task(self, event: AstrMessageEvent, task: str):
-        """设置当前任务提示词"""
-        if not self._check_whitelist(event):
-            yield event.plain_result("❌ 当前会话不在白名单中，无法使用注入功能。")
-            return
-
-        key = self._get_storage_key(event)
-        data = await self.get_kv_data(key, {})
-        
-        data["task"] = task
-        # 每次更新任务，重置生效轮次
-        data["turns_left"] = self.config.get("max_turns", 10)
-        
-        await self.put_kv_data(key, data)
-        yield event.plain_result(f"✅ 当前任务已注入，将在接下来的 {data['turns_left']} 轮对话中生效。")
+    async def set_task(self, event: AstrMessageEvent):
+        """设置当前任务提示词。用法: /set_task [轮次] <内容>"""
+        async for r in self._handle_set_command(event, "task", "当前任务"):
+            yield r
 
     @filter.command("set_know")
-    async def set_know(self, event: AstrMessageEvent, knowledge: str):
-        """设置附加知识提示词"""
-        if not self._check_whitelist(event):
-            yield event.plain_result("❌ 当前会话不在白名单中，无法使用注入功能。")
+    async def set_know(self, event: AstrMessageEvent):
+        """设置附加知识提示词。用法: /set_know [轮次] <内容>"""
+        async for r in self._handle_set_command(event, "knowledge", "附加知识"):
+            yield r
+
+    async def _handle_set_command(self, event: AstrMessageEvent, type_name: str, display_name: str):
+        if not self.service.check_whitelist(event):
+            yield event.plain_result(f"❌ 当前会话不在白名单中，无法使用注入功能。")
             return
 
-        key = self._get_storage_key(event)
-        data = await self.get_kv_data(key, {})
+        msg_str = event.message_str.strip()
+        parts = msg_str.split(maxsplit=2)
         
-        data["knowledge"] = knowledge
-        # 每次更新知识，重置生效轮次
-        data["turns_left"] = self.config.get("max_turns", 10)
+        if len(parts) < 2:
+             cmd = event.message_obj.raw_message.split()[0]
+             yield event.plain_result(f"❌ 请输入内容。用法: /{cmd} [轮次] <内容>")
+             return
         
-        await self.put_kv_data(key, data)
-        yield event.plain_result(f"✅ 附加知识已注入，将在接下来的 {data['turns_left']} 轮对话中生效。")
+        default_turns = self.config.get("default_turns", 10)
+        max_turns = self.config.get("max_turns_limit", 50)
+        current_turns = default_turns
+        content = ""
+        
+        try:
+            potential_turns = int(parts[1])
+            if len(parts) > 2:
+                current_turns = potential_turns
+                content = parts[2]
+            else:
+                content = parts[1] 
+        except ValueError:
+            # Check for suffixes like " content 20"
+            import re
+            match = re.search(r'^(.*)\s+(\d+)$', msg_str.split(maxsplit=1)[1])
+            if match:
+                 content = match.group(1)
+                 current_turns = int(match.group(2))
+            else:
+                 content = msg_str.split(maxsplit=1)[1]
+
+        if current_turns > max_turns:
+            current_turns = max_turns
+            yield event.plain_result(f"⚠️ 设置的轮次超过上限，已自动调整为 {max_turns} 轮。")
+
+        success, msg = await self.service.add_injection(event, type_name, content, current_turns)
+        if not success:
+            yield event.plain_result(msg)
+        else:
+            yield event.plain_result(f"✅ {display_name}已注入，将在 {current_turns} 轮对话内生效。")
+
+
 
     @filter.command("show_injections")
     async def show_injections(self, event: AstrMessageEvent):
         """查看当前生效的注入信息"""
-        key = self._get_storage_key(event)
-        data = await self.get_kv_data(key, None)
+        injections = await self.service.get_injections(event)
         
-        if not data:
+        if not injections:
             yield event.plain_result("📭 当前会话没有生效的注入信息。")
             return
 
-        msg = [
-            "📋 当前注入信息：",
-            f"🔄 剩余生效轮次: {data.get('turns_left', 0)}",
-            f"📌 当前任务: {data.get('task', '无')}",
-            f"📚 附加知识: {data.get('knowledge', '无')}"
-        ]
+        msg = ["📋 当前注入信息："]
+        for idx, item in enumerate(injections):
+            t = "📌 任务" if item["type"] == "task" else "📚 知识"
+            c = item['content']
+            display_content = c[:20] + "..." if len(c) > 20 else c
+            msg.append(f"{idx+1}. {t} (剩 {item['turns_left']} 轮): {display_content}")
+            
         yield event.plain_result("\n".join(msg))
 
     @filter.command("clear_injections")
     async def clear_injections(self, event: AstrMessageEvent):
         """清除当前所有注入"""
-        key = self._get_storage_key(event)
-        await self.delete_kv_data(key)
+        await self.service.clear_injections(event)
         yield event.plain_result("🗑️ 已清除所有注入信息。")
 
     @filter.command("add_whitelist")
@@ -97,37 +111,15 @@ class PromptInjector(Star):
     @filter.on_llm_request()
     async def inject_prompts(self, event: AstrMessageEvent, req: ProviderRequest):
         """在 LLM 请求前注入提示词"""
-        if not self._check_whitelist(event):
+        if not self.service.check_whitelist(event):
             return
 
-        key = self._get_storage_key(event)
-        data = await self.get_kv_data(key, None)
-
-        if not data:
-            return
-
-        turns = data.get("turns_left", 0)
-        if turns <= 0:
-            # 轮次耗尽，清理数据
-            await self.delete_kv_data(key)
-            return
-
-        # 构造注入内容
-        injection_text = ""
-        if data.get("task"):
-            injection_text += f"\n[System Injection - Current Task]\n{data['task']}\n"
-        if data.get("knowledge"):
-            injection_text += f"\n[System Injection - Additional Knowledge]\n{data['knowledge']}\n"
+        injection_text = await self.service.get_formatted_injection_text(event)
         
         if injection_text:
-            # 注入到 system prompt 中
-            # 如果原 system prompt 存在，追加到后面；否则直接设置
             if req.system_prompt:
                 req.system_prompt += injection_text
             else:
                 req.system_prompt = injection_text
             
-            # 扣除轮次
-            data["turns_left"] = turns - 1
-            await self.put_kv_data(key, data)
-            logger.info(f"Injecting prompt for {event.unified_msg_origin}. Turns left: {data['turns_left']}")
+            logger.info(f"Injected prompt for {event.unified_msg_origin}.")

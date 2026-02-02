@@ -1,9 +1,21 @@
 {
-  "max_turns": {
+  "default_turns": {
     "description": "默认注入生效轮次",
     "type": "int",
     "default": 10,
-    "hint": "设置注入的提示词默认保留多少轮对话。"
+    "hint": "当用户未指定轮次时，注入的提示词默认保留多少轮对话。"
+  },
+  "max_turns_limit": {
+    "description": "最大允许设置的轮次",
+    "type": "int",
+    "default": 100,
+    "hint": "用户可以通过指令设置的最大轮次上限。"
+  },
+  "max_injections_per_session": {
+    "description": "单会话最大注入条目数",
+    "type": "int",
+    "default": 5,
+    "hint": "每个会话允许同时存在的 Task 和 Knowledge 条目总和上限。"
   },
   "whitelist_mode": {
     "description": "启用白名单模式",
@@ -16,5 +28,17 @@
     "type": "list",
     "default": [],
     "hint": "填入允许使用注入功能的会话 ID (unified_msg_origin)。"
+  },
+  "task_prompt_template": {
+    "description": "任务提示词模板",
+    "type": "string",
+    "default": "\\n[Current Task]\\n{content}\\n",
+    "hint": "自定义注入的任务提示词格式。使用 {content} 占位符表示内容。"
+  },
+  "knowledge_prompt_template": {
+    "description": "知识提示词模板",
+    "type": "string",
+    "default": "\\n[Additional Knowledge]\\n{content}\\n",
+    "hint": "自定义注入的知识提示词格式。使用 {content} 占位符表示内容。"
   }
 }
