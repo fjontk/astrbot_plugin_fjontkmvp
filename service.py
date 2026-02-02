@@ -62,8 +62,10 @@ class InjectionService:
 
         injections = data["injections"]
         active_injections = []
-        injection_text = ""
         has_change = False
+        
+        task_contents = []
+        know_contents = []
 
         # Get templates
         task_tmpl = self.config.get("task_prompt_template", "\n[Current Task]\n{content}\n")
@@ -71,18 +73,11 @@ class InjectionService:
 
         for item in injections:
             if item["turns_left"] > 0:
-                # Use template based on type
-                tmpl = task_tmpl if item["type"] == "task" else know_tmpl
-                try:
-                    # Replace {content} with actual content
-                    # Also handle if user put literal \n in config string, though typically JSON handles it.
-                    # AstrBot config might pass as raw string.
-                    formatted_content = tmpl.replace("{content}", item["content"])
-                    injection_text += formatted_content
-                except Exception:
-                    # Fallback
-                    header = "[Current Task]" if item["type"] == "task" else "[Additional Knowledge]"
-                    injection_text += f"\n**{header}**\n{item['content']}\n"
+                # Add to appropriate list
+                if item["type"] == "task":
+                    task_contents.append(item["content"])
+                else:
+                    know_contents.append(item["content"])
                 
                 item["turns_left"] -= 1
                 if item["turns_left"] > 0:
@@ -90,6 +85,22 @@ class InjectionService:
                 has_change = True
             else:
                 has_change = True
+
+        injection_text = ""
+
+        if task_contents:
+            combined_task = "\n".join(task_contents)
+            try:
+                injection_text += task_tmpl.replace("{content}", combined_task)
+            except Exception:
+                 injection_text += f"\n[Current Task]\n{combined_task}\n"
+
+        if know_contents:
+            combined_know = "\n".join(know_contents)
+            try:
+                injection_text += know_tmpl.replace("{content}", combined_know)
+            except Exception:
+                 injection_text += f"\n[Additional Knowledge]\n{combined_know}\n"
 
         if has_change:
             if not active_injections:
