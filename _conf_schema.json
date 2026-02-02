@@ -1,0 +1,20 @@
+{
+  "max_turns": {
+    "description": "默认注入生效轮次",
+    "type": "int",
+    "default": 10,
+    "hint": "设置注入的提示词默认保留多少轮对话。"
+  },
+  "whitelist_mode": {
+    "description": "启用白名单模式",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后，只有在白名单内的会话才会启用提示词注入功能。"
+  },
+  "whitelist": {
+    "description": "会话白名单",
+    "type": "list",
+    "default": [],
+    "hint": "填入允许使用注入功能的会话 ID (unified_msg_origin)。"
+  }
+}
