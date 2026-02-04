@@ -1,6 +1,6 @@
 name: astrbot_plugin_simple_injections # 插件唯一识别名，以 astrbot_plugin_ 前缀开头
 display_name: 轻量级注入插件 # 用于展示的名字，可以是方便人类阅读的名字（需要版本 >= v4.5.0，低版本不会报错，请放心填写）
-desc: 轻量级提示词注入插件。允许用户使用指令进行指定轮次的提示词注入，适用于跑团主持人等需要在规定轮次内持续完成特定任务的场景。 # 插件简短描述
+desc: 轻量级提示词注入插件。允许用户使用指令进行指定轮次的提示词注入，适用于跑团主持人等需要在规定轮次内持续完成特定任务的场景。
 version: v1.0.0 # 插件版本号。格式：v1.1.1 或者 v1.1
 author: fjontk # 作者
 repo: https://github.com/fjontk/astrbot_plugin_simple_injections # 插件的仓库地址
